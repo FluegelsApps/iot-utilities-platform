@@ -1,0 +1,213 @@
+# IoT-Utilities Platform Docker Compose Template
+# To install the platform, replace the following placeholders in the file:
+# - HOSTNAME: Public DNS name the platform will be available at
+# - ADMIN_USERNAME: Username of the admin account
+# - ADMIN_PASSWORD: Password of the admin account
+# - INITIAL_USERNAME: Username of the initial user account
+# - INITIAL_DISPLAY_NAME: Display name of the initial user account
+# - INITIAL_PASSWORD: Password of the initial user account
+# - KAFKA_CORE_SECRET: Client secret used to authenticate the core-service with the Kafka broker
+# - POSTGRES_USERNAME: Username of the Postgres database
+# - POSTGRES_PASSWORD: Password of the Postgres database
+# - POSTGRES_VOLUME: Volume that is mounted to the Postgres database
+# - INFLUX_USERNAME: Username of the Influx database
+# - INFLUX_PASSWORD: Password of the Influx database
+# - INFLUX_ORGANIZATION: Organization of the Influx database
+# - INFLUX_VOLUME: Volume that is mounted to the Influx database
+# - CONFIG_VOLUME: Configuration volume that is mounted to the platform
+# - TRUST_STORE_VOLUME: Trust store volume that is mounted to the platform and contains all certificates
+# When done, rename the file to "docker-compose.yml" and run: docker compose up
+
+version: "3"
+
+services:
+  keycloak:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-keycloak:latest
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/keycloak/health/ready"]
+      interval: 10s
+      timeout: 7s
+      retries: 15
+    environment:
+      - KEYCLOAK_ADMIN=<ADMIN_USERNAME>
+      - KEYCLOAK_ADMIN_PASSWORD=<ADMIN_PASSWORD>
+      - KC_HEALTH_ENABLED=true
+    networks:
+      - iot-utilities-platform-network
+
+  postgres:
+    image: postgres:latest
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready", "-d", "iot-utilities" ]
+      interval: 10s
+      timeout: 7s
+      retries: 15
+    environment:
+      - POSTGRES_USER=<POSTGRES_USERNAME>
+      - POSTGRES_PASSWORD=<POSTGRES_PASSWORD>
+      - POSTGRES_DB=iot-utilities
+    volumes:
+      - <POSTGRES_VOLUME>:/var/lib/postgresql/data
+    networks:
+      - iot-utilities-platform-network
+
+  influx:
+    image: influxdb:latest
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8086/ping" ]
+      interval: 10s
+      timeout: 7s
+      retries: 15
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=<INFLUX_USERNAME>
+      - DOCKER_INFLUXDB_INIT_PASSWORD=<INFLUX_PASSWORD>
+      - DOCKER_INFLUXDB_INIT_ORG=<INFLUX_ORGANIZATION>
+      - DOCKER_INFLUXDB_INIT_BUCKET=ble_devices
+    volumes:
+      - <INFLUX_VOLUME>:/var/lib/influxdb2
+    networks:
+      - iot-utilities-platform-network
+
+  core:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-core:latest
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8085/health" ]
+      interval: 10s
+      timeout: 7s
+      retries: 15
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      influx:
+        condition: service_healthy
+    environment:
+      - HOSTNAME=<HOSTNAME>
+      - KAFKA_CORE_CLIENT_SECRET=<KAFKA_CORE_SECRET>
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/iot-utilities
+      - SPRING_DATASOURCE_USERNAME=<POSTGRES_USERNAME>
+      - SPRING_DATASOURCE_PASSWORD=<POSTGRES_PASSWORD>
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - KEYCLOAK_ADMIN_USERNAME=<ADMIN_USERNAME>
+      - KEYCLOAK_ADMIN_PASSWORD=<ADMIN_PASSWORD>
+      - KEYCLOAK_INITIAL_USERNAME=<INITIAL_USERNAME>
+      - KEYCLOAK_INITIAL_DISPLAY_NAME=<INITIAL_DISPLAY_NAME>
+      - KEYCLOAK_INITIAL_PASSWORD=<INITIAL_PASSWORD>
+      - INFLUXDB_USERNAME=<INFLUX_USERNAME>
+      - INFLUXDB_PASSWORD=<INFLUX_PASSWORD>
+      - INFLUXDB_ORGANIZATION=<INFLUX_ORGANIZATION>
+    volumes:
+      - <CONFIG_VOLUME>/app.conf:/etc/nginx/nginx.conf
+      - <TRUST_STORE_VOLUME>:/etc/iot-utilities/cert_store
+    networks:
+      - iot-utilities-platform-network
+
+  transport-service:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-transport:latest
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      influx:
+        condition: service_healthy
+      core:
+        condition: service_healthy
+    environment:
+      - HOSTNAME=<HOSTNAME>
+    networks:
+      - iot-utilities-platform-network
+
+  next:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-frontend:latest
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_HOSTNAME: <HOSTNAME>
+    networks:
+      - iot-utilities-platform-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - iot-utilities-platform-network
+
+  kafka:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-kafka:latest
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: nc -z kafka 9092 || exit -1
+      interval: 10s
+      timeout: 10s
+      retries: 15
+    environment:
+      HOSTNAME: <HOSTNAME>
+      OAUTH_CLIENT_SECRET: <KAFKA_CORE_SECRET>
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092,SASL_SSL_HOST://<HOSTNAME>:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL_HOST:SASL_SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SASL_ENABLED_MECHANISMS: OAUTHBEARER
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: OAUTHBEARER
+      KAFKA_SSL_KEYSTORE_TYPE: PEM
+      KAFKA_SSL_KEYSTORE_LOCATION: /etc/iot-utilities/cert_store/active/kafka_keystore.pem
+      KAFKA_SSL_TRUSTSTORE_TYPE: PEM
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/iot-utilities/cert_store/active/kafka_truststore.pem
+      KAFKA_SSL_CLIENT_AUTH: none
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
+      ZOOKEEPER_SASL_ENABLED: false
+    volumes:
+      - <TRUST_STORE_VOLUME>:/etc/iot-utilities/cert_store
+
+  nginx:
+    image: ghcr.io/fluegelsapps/iot-utilities-platform-nginx:latest
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      core:
+        condition: service_started
+      transport-service:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "29092:29092"
+    volumes:
+      - <CONFIG_VOLUME>/app.conf:/etc/nginx/nginx.conf
+      - <TRUST_STORE_VOLUME>:/etc/iot-utilities/cert_store
+    networks:
+      - iot-utilities-platform-network
+
+networks:
+  iot-utilities-platform-network:
