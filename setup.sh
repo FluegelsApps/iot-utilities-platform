@@ -133,6 +133,8 @@ if [ "$advanced_mode" = true ]; then
   read -s influxPassword
   echo "Organization name of the Influx database (leave empty for default):"
   read influxOrganization
+  echo "Access token of the Influx database (leave empty to generate):"
+  read -s influxToken
 else
   # Auto-fill all required credentials
   httpsPort="443"
@@ -143,6 +145,7 @@ else
   influxPassword=$(generate_password)
   influxOrganization=iot-utilities
   kafkaCoreSecret=$(generate_password)
+  influxToken=$(generate_password)
 fi
 
 # Installation step 3: Update the docker compose template file

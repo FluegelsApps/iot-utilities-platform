@@ -13,6 +13,7 @@
 # - INFLUX_USERNAME: Username of the Influx database
 # - INFLUX_PASSWORD: Password of the Influx database
 # - INFLUX_ORGANIZATION: Organization of the Influx database
+# - INFLUX_TOKEN: Access token used to authorize HTTP requests to the API of the Influx DB
 # - INFLUX_VOLUME: Volume that is mounted to the Influx database
 # - CONFIG_VOLUME: Configuration volume that is mounted to the platform
 # - TRUST_STORE_VOLUME: Trust store volume that is mounted to the platform and contains all certificates
@@ -27,7 +28,7 @@ services:
     image: ghcr.io/fluegelsapps/iot-utilities-platform-keycloak:latest
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/keycloak/health/ready"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/keycloak/health/ready" ]
       interval: 10s
       timeout: 7s
       retries: 15
@@ -69,6 +70,7 @@ services:
       - DOCKER_INFLUXDB_INIT_PASSWORD=<INFLUX_PASSWORD>
       - DOCKER_INFLUXDB_INIT_ORG=<INFLUX_ORGANIZATION>
       - DOCKER_INFLUXDB_INIT_BUCKET=ble_devices
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=<INFLUX_TOKEN>
     volumes:
       - <INFLUX_VOLUME>:/var/lib/influxdb2
     networks:
@@ -106,6 +108,7 @@ services:
       - INFLUXDB_USERNAME=<INFLUX_USERNAME>
       - INFLUXDB_PASSWORD=<INFLUX_PASSWORD>
       - INFLUXDB_ORGANIZATION=<INFLUX_ORGANIZATION>
+      - INFLUXDB_TOKEN=<INFLUX_TOKEN>
     volumes:
       - <CONFIG_VOLUME>/nginx.conf:/etc/nginx/nginx.conf
       - <TRUST_STORE_VOLUME>:/etc/iot-utilities/cert_store
