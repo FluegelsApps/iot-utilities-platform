@@ -174,6 +174,7 @@ find_and_replace_compose "<POSTGRES_PASSWORD>" "$postgresPassword"
 find_and_replace_compose "<INFLUX_USERNAME>" "$influxUsername"
 find_and_replace_compose "<INFLUX_PASSWORD>" "$influxPassword"
 find_and_replace_compose "<INFLUX_ORGANIZATION>" "$influxOrganization"
+find_and_replace_compose "<INFLUX_TOKEN>" "$influxToken"
 
 # Mount the local volumes into the containers
 find_and_replace_compose "<POSTGRES_VOLUME>" "./postgres"
